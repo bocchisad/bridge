@@ -1,0 +1,30 @@
+# binaries
+/bridge
+/bridge-*
+*.exe
+*.test
+*.out
+/dist/
+
+# local / IDE
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# env / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Go
+coverage.out
+coverage.html
+vendor/
+
+# internal docs (keep README.md)
+docs/
+*.md
+!README.md
