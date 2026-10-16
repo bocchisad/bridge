@@ -9,6 +9,7 @@ import (
 
 	"github.com/mell/bridge/internal/daemon"
 	"github.com/mell/bridge/internal/ipc"
+	"github.com/mell/bridge/internal/menu"
 	"github.com/mell/bridge/internal/relay"
 	"github.com/mell/bridge/ui/tray"
 	"github.com/spf13/cobra"
@@ -18,9 +19,14 @@ func main() {
 	root := &cobra.Command{
 		Use:   "bridge",
 		Short: "Send files between your machines over LAN or an optional relay",
+		Long:  "Run without args (or `bridge menu`) for an interactive CLI.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return menu.Run()
+		},
 	}
 
 	root.AddCommand(
+		cmdMenu(),
 		cmdDaemon(),
 		cmdRelay(),
 		cmdTray(),
@@ -35,6 +41,16 @@ func main() {
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
+	}
+}
+
+func cmdMenu() *cobra.Command {
+	return &cobra.Command{
+		Use:   "menu",
+		Short: "Interactive CLI menu (daemon / pair / send)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return menu.Run()
+		},
 	}
 }
 

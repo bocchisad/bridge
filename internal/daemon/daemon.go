@@ -106,20 +106,25 @@ func (d *Daemon) Run(ctx context.Context) error {
 }
 
 func (d *Daemon) verifyPeer(rawCerts [][]byte) error {
+	// Accept any client cert at TLS layer. Pairing PIN / peerstore checks happen
+	// in protocol handlers — otherwise macOS clients hit "bad certificate" when
+	// the PIN window is tight or mDNS retries race the handshake.
 	if len(rawCerts) == 0 {
 		return fmt.Errorf("no certificate")
 	}
-	fp := identity.Fingerprint(rawCerts[0])
-	for _, p := range d.peers.List() {
-		if p.Fingerprint == fp {
-			return nil
-		}
+	return nil
+}
+
+func peerCertFingerprint(conn net.Conn) (string, bool) {
+	tc, ok := conn.(*tls.Conn)
+	if !ok {
+		return "", false
 	}
-	// Allow handshake while a PIN session is active; PIN is checked in handlePairHello.
-	if _, ok := d.pairer.Current(); ok {
-		return nil
+	state := tc.ConnectionState()
+	if len(state.PeerCertificates) == 0 {
+		return "", false
 	}
-	return fmt.Errorf("unpaired peer")
+	return identity.Fingerprint(state.PeerCertificates[0].Raw), true
 }
 
 func (d *Daemon) acceptLoop(ctx context.Context, ln net.Listener) {
@@ -213,8 +218,13 @@ func (d *Daemon) handleOffer(conn net.Conn, body json.RawMessage) {
 	if err != nil {
 		return
 	}
-	if _, ok := d.peers.Get(offer.FromID); !ok {
+	peer, ok := d.peers.Get(offer.FromID)
+	if !ok {
 		_ = protocol.WriteMessage(conn, protocol.TypeReject, protocol.Reject{TransferID: offer.TransferID, Reason: "not paired"})
+		return
+	}
+	if fp, ok := peerCertFingerprint(conn); !ok || fp != peer.Fingerprint {
+		_ = protocol.WriteMessage(conn, protocol.TypeReject, protocol.Reject{TransferID: offer.TransferID, Reason: "certificate mismatch"})
 		return
 	}
 

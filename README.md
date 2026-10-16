@@ -10,23 +10,17 @@ Not a sync tool. Not KDE Connect. Just pair once, then `bridge send`.
 # build
 go build -o bridge ./cmd/bridge
 
-# on each machine
+# interactive menu (recommended)
+./bridge
+# or: ./bridge menu
+# 1) Start daemon → 2/3) Pair → 5) Send file
+
+# classic commands also work:
 ./bridge daemon
-
-# pair (device A)
 ./bridge pair
-# → shows PIN
-
-# pair (device B) — mDNS, or explicit address if discovery fails
-./bridge pair 123456
 ./bridge pair 123456 --addr 192.168.1.10:7331
-
-# send
 ./bridge send <peer-name> ~/Documents/notes.pdf
-
-# on receiver (if auto_accept is false)
-./bridge incoming
-./bridge accept <transfer_id>
+./bridge incoming && ./bridge accept <transfer_id>
 ```
 
 Tray UI (optional):
