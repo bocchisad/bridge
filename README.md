@@ -23,11 +23,16 @@ go build -o bridge ./cmd/bridge
 ./bridge incoming && ./bridge accept <transfer_id>
 ```
 
-Tray UI (optional):
+Tray UI (optional — starts daemon if needed, notifications, send/accept):
 
 ```bash
 ./bridge tray
 ```
+
+- **Show pairing PIN** — desktop notification + PIN in terminal
+- **Send to peer** — pick peer → file dialog → send
+- **Incoming** — Accept / Reject with notifications
+- **Open inbox** — `~/Downloads/bridge`
 
 ## Internet transfers
 
