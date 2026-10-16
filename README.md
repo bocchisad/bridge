@@ -1,101 +1,139 @@
 # bridge
 
-Send files and folders between your machines (Mac ↔ Linux) over the local network, with an optional self-hosted relay for when you're not on the same LAN.
+**Send files between your machines over LAN — or an optional self-hosted relay when you're not on the same network.**
 
-Not a sync tool. Not KDE Connect. Just pair once, then `bridge send`.
+Not a sync tool. Not KDE Connect. Pair once with a PIN, then push files from the CLI, interactive menu, or system tray.
+
+[![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-black?style=flat-square)](https://github.com/bocchisad/bridge)
+[![go](https://img.shields.io/badge/go-1.22%2B-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
+[![license](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](./LICENSE)
+[![version](https://img.shields.io/badge/version-0.1.0-3b82f6?style=flat-square)](https://github.com/bocchisad/bridge)
+
+## Features
+
+- **LAN-first** — mDNS discovery, direct TLS between daemons
+- **Optional relay** — self-hosted byte proxy for cross-network transfers (E2E TLS; relay sees ciphertext)
+- **PIN pairing** — 6-digit code, then peers trust by certificate fingerprint
+- **CLI + menu + tray** — `bridge`, `bridge menu`, `bridge tray`
+- **Files & folders** — folders stream as tar; SHA-256 verified on receive
 
 ## Quick start
 
 ```bash
-# build
+git clone https://github.com/bocchisad/bridge.git
+cd bridge
 go build -o bridge ./cmd/bridge
 
 # interactive menu (recommended)
 ./bridge
-# or: ./bridge menu
 # 1) Start daemon → 2/3) Pair → 5) Send file
-
-# classic commands also work:
-./bridge daemon
-./bridge pair
-./bridge pair 123456 --addr 192.168.1.10:7331
-./bridge send <peer-name> ~/Documents/notes.pdf
-./bridge incoming && ./bridge accept <transfer_id>
 ```
 
-Tray UI (optional — starts daemon if needed, notifications, send/accept):
+### Classic commands
+
+```bash
+# on each machine
+./bridge daemon
+
+# device A
+./bridge pair
+# → shows PIN
+
+# device B
+./bridge pair 123456
+./bridge pair 123456 --addr 192.168.1.10:7331   # if mDNS fails
+
+# send
+./bridge send <peer-name> ~/Documents/notes.pdf
+
+# receiver (if auto_accept is false)
+./bridge incoming
+./bridge accept <transfer_id>
+```
+
+### Tray
 
 ```bash
 ./bridge tray
 ```
 
-- **Show pairing PIN** — desktop notification + PIN in terminal
-- **Send to peer** — pick peer → file dialog → send
-- **Incoming** — Accept / Reject with notifications
-- **Open inbox** — `~/Downloads/bridge`
+| Action | What it does |
+|--------|----------------|
+| Show pairing PIN | notification + PIN in terminal |
+| Send to peer | file dialog → send |
+| Incoming | Accept / Reject |
+| Open inbox | `~/Downloads/bridge` |
 
-## Internet transfers
+**Linux file picker:** install `zenity` (`sudo pacman -S zenity`). Falls back to `kdialog` / `yad` / `wofi`.
 
-Run a relay on a VPS (or any reachable host):
+## Internet (relay)
 
 ```bash
 ./bridge relay --listen :7330 --token 'long-secret'
 ```
 
-On both clients, edit `~/.config/bridge/config.json`:
+On both clients, `~/.config/bridge/config.json`:
 
 ```json
 {
   "relay_url": "vps.example.com:7330",
-  "relay_token": "long-secret"
+  "relay_token": "long-secret",
+  "auto_accept": true
 }
 ```
 
-Restart daemons. LAN is still preferred when peers are discoverable via mDNS.
+Restart daemons. LAN is still preferred when peers are visible via mDNS.
 
 ## Config
 
 | Path | Purpose |
 |------|---------|
-| `~/.config/bridge/config.json` | name, ports, inbox, relay |
+| `~/.config/bridge/config.json` | name, ports, inbox, relay, `auto_accept` |
 | `~/.config/bridge/identity.json` | device id |
 | `~/.config/bridge/cert.pem` / `key.pem` | TLS identity |
 | `~/.config/bridge/peers.json` | paired devices |
 | `~/Downloads/bridge/` | default inbox |
 
-Environment:
-
-- `BRIDGE_CONFIG_DIR` — override config directory (useful for local multi-instance tests)
+- `BRIDGE_CONFIG_DIR` — override config directory (multi-instance tests)
 
 ## Threat model
 
-**Protects against:** casual LAN neighbors, and a relay operator reading file contents (TLS is end-to-end between daemons; relay only proxies bytes).
+| Protects against | Does **not** protect against |
+|------------------|------------------------------|
+| Casual LAN neighbors | Malware on an already-paired device |
+| Relay operator reading file contents (E2E TLS) | Someone who sees the PIN during pairing |
 
-**Does not protect against:** malware on an already-paired device, or someone who sees/enters the PIN during the short pairing window.
-
-## Build notes
-
-- **Arch Linux:** `go build -o bridge ./cmd/bridge`. Tray needs a working StatusNotifier/AppIndicator host; file picker uses `zenity` if installed.
-- **macOS:** same build command. Tray uses the menu bar; file picker uses a native `osascript` dialog.
+## Build
 
 ```bash
+go build -o bridge ./cmd/bridge
+
+# cross-compile
 GOOS=darwin GOARCH=arm64 go build -o bridge-darwin-arm64 ./cmd/bridge
-GOOS=linux GOARCH=amd64 go build -o bridge-linux-amd64 ./cmd/bridge
+GOOS=linux  GOARCH=amd64 go build -o bridge-linux-amd64  ./cmd/bridge
 ```
+
+| OS | Notes |
+|----|--------|
+| **Arch / Linux** | Tray needs a StatusNotifier host (panel/dock). File picker: `zenity` recommended. |
+| **macOS** | Tray in the menu bar; file picker via `osascript`. |
+
+> On NTFS mounts (e.g. `/DATA` on dual-boot), run the binary from `~/bin` — Linux may deny `./bridge` exec on NTFS.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
+| `bridge` / `bridge menu` | interactive CLI |
 | `bridge daemon` | background agent |
+| `bridge tray` | system tray (starts daemon if needed) |
 | `bridge relay` | optional relay server |
-| `bridge tray` | system tray UI |
 | `bridge status` | local device info |
 | `bridge peers` | paired peers + online state |
-| `bridge pair` / `bridge pair <PIN>` | pairing |
+| `bridge pair` / `pair <PIN>` | pairing (`--addr host:port`) |
 | `bridge send <peer> <path>` | send file or folder |
 | `bridge incoming` / `accept` / `reject` | incoming transfers |
 
 ## License
 
-MIT
+[MIT](./LICENSE)
