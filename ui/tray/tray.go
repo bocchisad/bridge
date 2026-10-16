@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -295,7 +297,6 @@ func pickPath() string {
 POSIX path of f`
 		out, err := exec.Command("osascript", "-e", script).Output()
 		if err != nil {
-			// try folder
 			script = `set f to choose folder with prompt "Send folder with bridge"
 POSIX path of f`
 			out, err = exec.Command("osascript", "-e", script).Output()
@@ -305,15 +306,109 @@ POSIX path of f`
 		}
 		return trimNL(string(out))
 	default:
-		out, err := exec.Command("zenity", "--file-selection", "--title=Send with bridge").Output()
-		if err != nil {
-			out, err = exec.Command("zenity", "--file-selection", "--directory", "--title=Send folder with bridge").Output()
-			if err != nil {
-				return ""
-			}
+		path, how := pickPathLinux()
+		if path == "" {
+			notify("bridge", "File picker unavailable. Install: sudo pacman -S zenity")
+			fmt.Fprintln(os.Stderr, "bridge: no file picker (tried zenity/kdialog/yad/wofi/rofi/fuzzel)")
+			return ""
 		}
-		return trimNL(string(out))
+		fmt.Fprintf(os.Stderr, "bridge: picked via %s: %s\n", how, path)
+		return path
 	}
+}
+
+func pickPathLinux() (string, string) {
+	type attempt struct {
+		name string
+		args []string
+	}
+	// Prefer real GUI dialogs, then Hyprland launchers.
+	attempts := []attempt{
+		{"zenity", []string{"zenity", "--file-selection", "--title=Send with bridge"}},
+		{"zenity-dir", []string{"zenity", "--file-selection", "--directory", "--title=Send folder with bridge"}},
+		{"kdialog", []string{"kdialog", "--getopenfilename", "."}},
+		{"kdialog-dir", []string{"kdialog", "--getexistingdirectory", "."}},
+		{"yad", []string{"yad", "--file-selection", "--title=Send with bridge"}},
+	}
+	for _, a := range attempts {
+		if _, err := exec.LookPath(a.args[0]); err != nil {
+			continue
+		}
+		out, err := exec.Command(a.args[0], a.args[1:]...).Output()
+		if err != nil {
+			continue
+		}
+		if p := trimNL(string(out)); p != "" {
+			return p, a.name
+		}
+	}
+	if p := pickWithLauncher(); p != "" {
+		return p, "launcher"
+	}
+	return "", ""
+}
+
+// pickWithLauncher lists files under common dirs via wofi/rofi/fuzzel.
+func pickWithLauncher() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	roots := []string{
+		filepath.Join(home, "Desktop"),
+		filepath.Join(home, "Documents"),
+		filepath.Join(home, "Downloads"),
+		filepath.Join(home, "DATA"),
+		home,
+	}
+	var existing []string
+	for _, r := range roots {
+		if st, err := os.Stat(r); err == nil && st.IsDir() {
+			existing = append(existing, r)
+		}
+	}
+	if len(existing) == 0 {
+		return ""
+	}
+
+	findCmd := "find"
+	for _, r := range existing {
+		findCmd += " " + shellQuote(r)
+	}
+	findCmd += ` -type f ! -path '*/.*' 2>/dev/null | head -n 4000`
+
+	launchers := [][]string{
+		{"wofi", "--dmenu", "-i", "-p", "bridge: send file"},
+		{"rofi", "-dmenu", "-i", "-p", "bridge: send file"},
+		{"fuzzel", "--dmenu", "-p", "bridge: send file"},
+	}
+	for _, launcher := range launchers {
+		if _, err := exec.LookPath(launcher[0]); err != nil {
+			continue
+		}
+		cmd := exec.Command("bash", "-c", findCmd+" | "+shellJoin(launcher))
+		cmd.Env = os.Environ()
+		out, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		if p := trimNL(string(out)); p != "" {
+			return p
+		}
+	}
+	return ""
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func shellJoin(args []string) string {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = shellQuote(a)
+	}
+	return strings.Join(parts, " ")
 }
 
 func notify(title, body string) {
